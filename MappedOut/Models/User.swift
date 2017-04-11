@@ -13,7 +13,6 @@ import SwiftyDrop
 
 class User: PFUser {
     
-    //Not yet finished
     
     //User inherits the properties username, password, and objectId from PFUser
     
