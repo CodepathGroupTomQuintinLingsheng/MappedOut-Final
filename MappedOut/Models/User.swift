@@ -9,6 +9,7 @@
 import UIKit
 import Parse
 import ParseUI
+import SwiftyDrop
 
 class User: PFUser {
     
@@ -24,34 +25,33 @@ class User: PFUser {
     var location: CLLocation?
     var friendIDs: [String]?
     var followerIDs: [String]?
-    
+    var userObjectID: String?
+    var coverpicFile: PFFile?
     
     override init() {
         super.init()
-        
+        //        self.name = PFUser.currentUser()?.username
         self.eventsOwned = PFUser.currentUser()?.objectForKey("eventOwned") as? [String]
         self.eventsAttending = PFUser.currentUser()?.objectForKey("eventsAttending") as? [String]
         self.eventsInvitedTo = PFUser.currentUser()?.objectForKey("eventsInvitedTo") as? [String]
         self.friendIDs = PFUser.currentUser()?.objectForKey("friendIDs") as? [String]
-        self.name = PFUser.currentUser()?.objectForKey("name") as? String
+
+        self.name = PFUser.currentUser()?.objectForKey("username") as? String
         self.propicFile = PFUser.currentUser()?.objectForKey("picture") as? PFFile
-        self.username = PFUser.currentUser()?.username
+        self.coverpicFile = PFUser.currentUser()?.objectForKey("coverpicture") as? PFFile
+        //        self.username = PFUser.currentUser()?.username
+
         self.objectId = PFUser.currentUser()?.objectId
         self.followerIDs = PFUser.currentUser()?.objectForKey("followerIDs") as? [String]
+        self.userObjectID = PFUser.currentUser()?.objectForKey("userObjectID") as? String
     }
     
-    //    init(name: String?, propic: UIImage?, eventsAttending: [String]?, eventsOwned: [String]?) {
-    //        super.init()
-    //        self.name = name
-    //        self.propic = propic
-    //        self.eventsAttending = eventsAttending
-    //        self.eventsOwned = eventsOwned
-    //    }
-    
+
     init(user: PFUser) {
         super.init()
         self.name = user.objectForKey("name") as? String
         self.propicFile = user.objectForKey("picture") as? PFFile
+        self.coverpicFile = user.objectForKey("coverpicture") as? PFFile
         self.eventsAttending = user.objectForKey("eventsAttending") as? [String]
         self.eventsOwned = user.objectForKey("eventOwned") as? [String]
         self.eventsInvitedTo = user.objectForKey("eventsInvitedTo") as? [String]
@@ -59,6 +59,8 @@ class User: PFUser {
         self.username = user.username
         self.objectId = user.objectId
         self.followerIDs = user.objectForKey("followerIDs") as? [String]
+        self.userObjectID = user.objectForKey("userObjectID") as? String
+
         
         let loc = user.objectForKey("location") as? PFGeoPoint
         if let loc = loc {
@@ -75,14 +77,36 @@ class User: PFUser {
             if let file = file {
                 PFUser.currentUser()?.setObject(file, forKey: "picture")
             }
-
         }
         
-        PFUser.currentUser()?.saveInBackground()
+        PFUser.currentUser()?.saveInBackgroundWithBlock({ (success:Bool, error:NSError?) in
+            if(success == true){
+                Drop.down("Changed avatar successfully", state: DropState.Success, duration: 3, action: nil)
+            }
+        })
     }
     
-    func addFriend(id:String) {
+    func updatecoverpic(name: String?, picture: UIImage?) {
+        if let name = name {
+            PFUser.currentUser()?.setObject("\(name)", forKey: "name")
+        }
+        if let picture = picture {
+            let file = Event.getPFFileFromImage(picture)
+            if let file = file {
+                PFUser.currentUser()?.setObject(file, forKey: "coverpicture")
+            }
+        }
+        
+        PFUser.currentUser()?.saveInBackgroundWithBlock({ (success:Bool, error:NSError?) in
+            if(success == true){
+                Drop.down("Changed cover image successfully", state: DropState.Success, duration: 3, action: nil)
+            }
+        })
+    }
+    
+    func addFriend(user: User) {
         print(friendIDs)
+        let id = user.objectId!
         if (friendIDs) != nil {
             self.friendIDs!.append(id)
         }else{
@@ -90,6 +114,83 @@ class User: PFUser {
         }
         print(friendIDs)
         PFUser.currentUser()?.setObject(friendIDs!, forKey: "friendIDs")
+        
+        PFUser.currentUser()?.saveInBackgroundWithBlock({ (done:Bool, error:NSError?) in
+            if(done){
+                print("upload success")
+                
+                let query = PFQuery(className: "UserObject")
+                
+                
+                query.getObjectInBackgroundWithId(user.userObjectID!, block: { (object: PFObject?, error: NSError?) in
+                    if let object = object {
+                        print("Object: ")
+                        print(object)
+                        var userObj = UserObject(object: object)
+                        var followerIDs = userObj.followerIDs
+                        if followerIDs != nil {
+                            followerIDs!.append(self.objectId!)
+                        }
+                        else {
+                            followerIDs = [self.objectId!]
+                        }
+                        print("Follower IDs: ")
+                        print(followerIDs)
+                        object.setObject(followerIDs!, forKey: "followerIDs")
+                        object.saveInBackground()
+                    }
+                })    
+            }else{
+                print(error)
+            }
+        })
+    }
+    
+    func removeFriend(user: User) {
+        print(friendIDs)
+        let id = user.objectId!
+        if (friendIDs) != nil {
+            self.friendIDs! = self.friendIDs!.filter() { $0 != id }
+        }
+        
+        PFUser.currentUser()?.setObject(friendIDs!, forKey: "friendIDs")
+        
+        PFUser.currentUser()?.saveInBackgroundWithBlock({ (done:Bool, error:NSError?) in
+            if(done){
+                print("upload success")
+                let query = PFQuery(className: "UserObject")
+                query.getObjectInBackgroundWithId(user.userObjectID!, block: { (object: PFObject?, error: NSError?) in
+                    if let object = object {
+                        var userObj = UserObject(object: object)
+                        var followerIDs = userObj.followerIDs
+                        if followerIDs != nil {
+                            followerIDs = followerIDs!.filter() { $0 != id }
+                        }
+                        object.setObject(followerIDs!, forKey: "followerIDs")
+                        object.saveInBackground()
+                    }
+                })
+                
+            }else{
+                print(error)
+            }
+        })
+    }
+    
+    func addOwnedEvent(id:String){
+        if(eventsAttending != nil){
+            self.eventsAttending?.append(id)
+        }else{
+            eventsAttending = [id]
+        }
+        PFUser.currentUser()?.setObject(eventsAttending!, forKey: "eventsAttending")
+        
+        if(eventsOwned != nil){
+            self.eventsOwned?.append(id)
+        }else{
+            eventsOwned = [id]
+        }
+        PFUser.currentUser()?.setObject(eventsOwned!, forKey: "eventOwned")
         
         PFUser.currentUser()?.saveInBackgroundWithBlock({ (done:Bool, error:NSError?) in
             if(done){
@@ -116,6 +217,7 @@ class User: PFUser {
             }
         })
     }
+    
     
     //getFriends() returns an array of Users on success in it's closure.
     func getFriends(success: (friends: [User])->()) {
@@ -200,6 +302,68 @@ class User: PFUser {
                 success(user)
             }
             
+        }
+    }
+
+
+    func getPublicAttendingEvents(success: ([Event])->()) {
+        let query = PFQuery(className: "Event")
+        var events: [Event] = []
+        if let eventsAttending = eventsAttending {
+            query.whereKey("_id", containedIn: eventsAttending)
+            //query.whereKey("date", greaterThan: NSDate())
+            query.whereKey("isPublic", equalTo: true)
+            query.orderByAscending("date")
+            query.findObjectsInBackgroundWithBlock({ (objects: [PFObject]?, error: NSError?) in
+                if let objects = objects {
+                    for object in objects {
+                        events.append(Event(event: object))
+                    }
+                    success(events)
+                }
+                else {
+                    print(error?.localizedDescription)
+                    success(events)
+                }
+            })
+        }
+        else {
+            success(events)
+        }
+    }
+    
+    func getOwnedEvents(success: ([Event])->()) {
+        let query = PFQuery(className: "Event")
+        var events: [Event] = []
+        if let eventsOwned = eventsOwned {
+            query.whereKey("_id", containedIn: eventsOwned)
+            query.whereKey("date", greaterThan: NSDate())
+            query.orderByAscending("date")
+            query.findObjectsInBackgroundWithBlock({ (objects: [PFObject]?, error: NSError?) in
+                if let objects = objects {
+                    for object in objects {
+                        events.append(Event(event: object))
+                    }
+                    success(events)
+                }
+                else {
+                    print(error?.localizedDescription)
+                    success(events)
+                }
+            })
+        }
+        else {
+            success(events)
+        }
+    }
+    
+    func getUserObject(success: (UserObject)->()) {
+        let query = PFQuery(className: "UserObject")
+        query.getObjectInBackgroundWithId(self.userObjectID!) { (object: PFObject?, error: NSError?) in
+            if let object = object {
+                let userObject = UserObject(object: object)
+                success(userObject)
+            }
         }
     }
 }
