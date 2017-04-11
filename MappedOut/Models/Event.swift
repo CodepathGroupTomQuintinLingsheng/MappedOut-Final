@@ -9,6 +9,7 @@
 import UIKit
 import Parse
 import ParseUI
+import SwiftyDrop
 
 class Event: NSObject {
     
@@ -106,6 +107,18 @@ class Event: NSObject {
             if(done) {
                 success(event)
                 print("create success")
+                let eventId = event.objectId
+                var eventsOwned = PFUser.currentUser()?.objectForKey("eventOwned") as? [String]
+                if eventsOwned != nil {
+                    eventsOwned!.append(eventId!)
+                }
+                else {
+                    eventsOwned = [eventId!]
+                }
+                
+                PFUser.currentUser()?.setObject(eventsOwned!, forKey: "eventOwned")
+                Drop.down("Create successfully", state: DropState.Success, duration: 3, action: nil)
+                NSNotificationCenter.defaultCenter().postNotificationName(userDidCreatenewNotification, object: nil)
                 PFUser.currentUser()?.fetchInBackground()
                 //                NSNotificationCenter.defaultCenter().postNotificationName(userDidCreatenewNotification, object: nil)
             }
@@ -193,4 +206,69 @@ class Event: NSObject {
         return nil
     }
     
+
+    func inviteUsersWithIDs(users: [User]) {
+        var userIds: [String] = []
+        for user in users {
+            if let objectID = user.objectId {
+                userIds.append(objectID)
+            }
+        }
+        let id = self.id
+        let query = PFQuery(className: "_User")
+        query.whereKey("objectID", containedIn: userIds)
+        query.findObjectsInBackgroundWithBlock { ( objects: [PFObject]?, error: NSError?) in
+            if let objects = objects {
+                for object in objects {
+                    let user = object as! PFUser
+                    var events = user.objectForKey("eventsInvitedTo") as! [String]
+                    events.append(id!)
+                    user.setObject(id!, forKey: "eventsInvitedTo")
+                    user.saveInBackground()
+                }
+            }
+        }
+    }
+    
+    func getUsersAttending(success: ([User])->()) {
+        var users: [User] = []
+        let query = PFQuery(className: "_User")
+        query.whereKey("_id", containedIn: usersAttending)
+        query.findObjectsInBackgroundWithBlock { (objects: [PFObject]?, error: NSError?) in
+            if let objects = objects {
+                for object in objects {
+                    let user = User(user: object as! PFUser)
+                    users.append(user)
+                }
+            }
+            success(users)
+        }
+    }
+    
+    func inviteToEvent(users: [User], success: ()->()) {
+        var userIds: [String] = []
+        for user in users {
+            userIds.append(user.userObjectID!)
+        }
+        let query = PFQuery(className: "UserObject")
+        query.whereKey("_id", containedIn: userIds)
+        query.findObjectsInBackgroundWithBlock { (objects: [PFObject]?, error: NSError?) in
+            if let objects = objects {
+                for object in objects {
+                    let userObject = UserObject(object: object)
+                    
+                    if userObject.eventsInvitedTo != nil {
+                        userObject.eventsInvitedTo?.append(self.id!)
+                    }
+                    else {
+                        userObject.eventsInvitedTo  = [self.id!]
+                    }
+                    
+                    object.setObject(userObject.eventsInvitedTo!, forKey: "eventsInvitedTo")
+                    object.saveInBackground()
+                }
+                success()
+            }
+        }
+    }
 }
